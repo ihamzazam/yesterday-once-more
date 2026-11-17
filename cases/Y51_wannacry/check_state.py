@@ -9,16 +9,16 @@ import json
 from pathlib import Path
 from urllib.request import urlopen
 
-import lab_keylogic
-import lab_ransom_chain
-import lab_wallet
+import ransomware
+import ransom_chain
+import wallet
 
 
 LAB_DIR = Path("/opt/wannacry-v2")
 
 
 def main():
-    cfg = lab_wallet.connect()
+    cfg = wallet.connect()
     print(f"chain id {cfg['chain_id']} at {cfg['rpc_url']}")
 
     try:
@@ -28,8 +28,8 @@ def main():
     except OSError:
         print("door:     not running (delivery inbox service is down)")
 
-    contract = lab_ransom_chain.discover_contract(cfg)
-    code = lab_wallet.rpc(cfg, "eth_getCode", [contract, "latest"])
+    contract = ransom_chain.discover_contract(cfg)
+    code = wallet.rpc(cfg, "eth_getCode", [contract, "latest"])
     code_bytes = (len(code) - 2) // 2
     print(f"contract: {contract}")
     print(f"  code on-chain: {code_bytes} bytes "
@@ -37,15 +37,15 @@ def main():
 
     wallet_file = LAB_DIR / "wallet.json"
     if wallet_file.exists():
-        address = lab_wallet.wallet_address(wallet_file)
-        balance = lab_wallet.balance_wei(cfg, address)
+        address = wallet.wallet_address(wallet_file)
+        balance = wallet.balance_wei(cfg, address)
         print(f"wallet:   {address}")
-        print(f"  balance: {lab_wallet.format_ether(balance)} lab ETH "
+        print(f"  balance: {wallet.format_ether(balance)} lab ETH "
               f"({'can pay 1 ETH ransom' if balance >= 10**18 else 'buy lab ETH on the SEED Exchange (menu option 3)'})")
     else:
         print("wallet:   none yet (create it in the participant menu, option 6)")
 
-    keylog = LAB_DIR / "lab_keylogic.json"
+    keylog = LAB_DIR / "ransomware.json"
     if keylog.exists():
         record = json.loads(keylog.read_text(encoding="utf-8"))
         print(f"payload:  executed on {record['participant_id']} "
@@ -64,7 +64,7 @@ def main():
 
     replies = []
     if code_bytes > 0:
-        for entry in lab_ransom_chain.poll_requests(cfg):
+        for entry in ransom_chain.poll_requests(cfg):
             replies.append(entry)
     if replies:
         for entry in replies:

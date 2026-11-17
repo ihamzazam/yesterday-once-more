@@ -18,10 +18,10 @@ import base64
 import json
 from pathlib import Path
 
-import lab_keylogic
+import ransomware
 
 
-DEFAULT_KEYLOG = lab_keylogic.DEFAULT_KEYLOG
+DEFAULT_KEYLOG = ransomware.DEFAULT_KEYLOG
 
 
 def decrypt_everything(file_key: bytes, target: Path, keylog_path: Path, state_file: Path):
@@ -29,7 +29,7 @@ def decrypt_everything(file_key: bytes, target: Path, keylog_path: Path, state_f
     participant_id = keylog["participant_id"]
     print()
     print("Decrypting with the pasted key:")
-    lab_keylogic.recover_samples(file_key, target, participant_id, keylog, state_file)
+    ransomware.recover_samples(file_key, target, participant_id, keylog, state_file)
     print()
     print("All ransomware envelopes removed. Your documents are back.")
 

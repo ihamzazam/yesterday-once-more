@@ -19,7 +19,7 @@ from chainseed.compiler import ChainSeedDocker  # noqa: E402
 from seedemu.compiler import Platform  # noqa: E402
 from seedemu.core import Emulator  # noqa: E402
 from seedemu.layers import Base, Routing  # noqa: E402
-from lab_chain import add_chain  # noqa: E402
+from chain_setup import add_chain  # noqa: E402
 
 
 LAB_DIR = "/opt/wannacry-v2"
@@ -32,11 +32,11 @@ CORPUS_DIR = "/home/seed/import_folder"
 VICTIM_FILES = (
     "file_generator.py",
     "prepare_participant.py",
-    "lab_keylogic.py",
-    "lab_ransom_chain.py",
+    "ransomware.py",
+    "ransom_chain.py",
     "check_state.py",
     "participant.py",
-    "lab_wallet.py",
+    "wallet.py",
     "terminal_ui.py",
     "wormdoor.py",
     "decryptor.py",
@@ -44,9 +44,9 @@ VICTIM_FILES = (
 )
 ATTACKER_FILES = (
     "file_generator.py",
-    "lab_keylogic.py",
-    "lab_ransom_chain.py",
-    "lab_wallet.py",
+    "ransomware.py",
+    "ransom_chain.py",
+    "wallet.py",
     "check_state.py",
 )
 

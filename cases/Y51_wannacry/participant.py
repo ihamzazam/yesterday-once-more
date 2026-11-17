@@ -5,7 +5,7 @@ import argparse
 import hashlib
 from pathlib import Path
 
-from lab_keylogic import ENCRYPTED_SUFFIX, MAGIC, NONCE_SIZE, SAMPLES, TAG_SIZE
+from ransomware import ENCRYPTED_SUFFIX, MAGIC, NONCE_SIZE, SAMPLES, TAG_SIZE
 from terminal_ui import run_interface
 
 

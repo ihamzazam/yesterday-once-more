@@ -15,8 +15,8 @@ from threading import Event, Thread
 
 from cryptography.exceptions import InvalidTag
 
-import lab_wallet
-import lab_keylogic
+import wallet
+import ransomware
 
 
 ERRORS = (OSError, ValueError, KeyError, TypeError, AttributeError, RuntimeError)
@@ -78,7 +78,7 @@ def wallet_screen(wallet_file):
     while True:
         heading("PARTICIPANT WALLET", "Private chain 18000 / local password-protected keystore")
         exists = wallet_file.exists() or wallet_file.is_symlink()
-        address = lab_wallet.wallet_address(wallet_file) if exists else None
+        address = wallet.wallet_address(wallet_file) if exists else None
         field("Address", address or "No wallet yet")
         field("Balance", balance)
         field("Last checked", checked)
@@ -97,23 +97,23 @@ def wallet_screen(wallet_file):
                 if password != getpass("Repeat password: "):
                     raise ValueError("passwords do not match")
                 with busy("Creating your encrypted wallet locally..."):
-                    lab_wallet.create_wallet(wallet_file, password)
+                    wallet.create_wallet(wallet_file, password)
                 del password
                 balance, checked = "Not checked", "Wallet created; use r to refresh"
             elif choice == "r":
                 if not address:
                     raise ValueError("create a wallet first")
                 with busy("Reading balance from chain 18000..."):
-                    config = lab_wallet.connect()
-                    value = lab_wallet.balance_wei(config, address)
-                balance = f"{lab_wallet.format_ether(value)} lab ETH"
+                    config = wallet.connect()
+                    value = wallet.balance_wei(config, address)
+                balance = f"{wallet.format_ether(value)} lab ETH"
                 checked = datetime.now().astimezone().isoformat(timespec="seconds")
             elif choice == "l":
-                lookup = lab_wallet.validate_address(input("Paste an address to look up: "))
+                lookup = wallet.validate_address(input("Paste an address to look up: "))
                 with busy("Querying the pasted address..."):
-                    value = lab_wallet.balance_wei(lab_wallet.connect(), lookup)
+                    value = wallet.balance_wei(wallet.connect(), lookup)
                 field("Address", lookup)
-                field("Balance", f"{lab_wallet.format_ether(value)} lab ETH")
+                field("Balance", f"{wallet.format_ether(value)} lab ETH")
                 pause()
             else:
                 print("Choose one of the displayed actions.")
@@ -134,7 +134,7 @@ def exchange_screen(wallet_file):
     while True:
         heading("SEED CRYPTO EXCHANGE", "Play-money market / settlement on private chain 18000")
         exists = wallet_file.exists() or wallet_file.is_symlink()
-        address = lab_wallet.wallet_address(wallet_file) if exists else None
+        address = wallet.wallet_address(wallet_file) if exists else None
         field("Deposit address", address or "No wallet yet — create one first (option 6)")
         if not address:
             print("\n[b] Back")
@@ -142,8 +142,8 @@ def exchange_screen(wallet_file):
                 return
             continue
         try:
-            value = lab_wallet.balance_wei(lab_wallet.connect(), address)
-            balance = f"{lab_wallet.format_ether(value)} lab ETH"
+            value = wallet.balance_wei(wallet.connect(), address)
+            balance = f"{wallet.format_ether(value)} lab ETH"
         except ERRORS:
             balance = "Unavailable"
         field("Your balance", balance)
@@ -167,7 +167,7 @@ def exchange_screen(wallet_file):
                 raise ValueError("the exchange trades whole amounts from 1 to 5 lab ETH")
             with busy("Placing your order on the SEED Exchange..."):
                 time.sleep(1.0)  # order matching theater
-                lab_wallet.request_funds(lab_wallet.connect(), address, amount)
+                wallet.request_funds(wallet.connect(), address, amount)
                 time.sleep(0.4)  # settlement theater
             print(f"\nOrder filled: +{amount} lab ETH delivered to your wallet.")
             pause()
@@ -239,7 +239,7 @@ def run_interface(target, state_file, inspect_documents):
                             password = getpass(
                                 "Wallet password (to sign the paid registration): "
                             )
-                        lab_keylogic.run_recovery_step(
+                        ransomware.run_recovery_step(
                             target, state_file, lab_dir, password=password
                         )
                         pause()
