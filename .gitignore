@@ -1,0 +1,14 @@
+# Emulator build output
+output/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Emulator dumps and map data
+*.bin
+.map.seed*
+
+# Editors / OS
+.DS_Store
