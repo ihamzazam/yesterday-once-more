@@ -1,137 +1,126 @@
 #!/usr/bin/env python3
-"""Compile a small SEED network: one victim host (host_0) and one attacker
-host (host_1). Propagation is not simulated yet; the worm's key-delivery step
-is performed manually by copying attacker_pub.pem from host_1 to host_0."""
+"""Y51 WannaCry (2017): ransomware with an on-chain ransom exchange.
+
+Phase 1 recipe: no worm yet. The ransomware is installed directly on three
+victims with a manual trigger (stand-in for the worm's arrival); payment runs
+on a private Ethereum chain in the same AS. See README.md.
+
+    python3 emulator.py                  # writes ./out-y51
+    cd out-y51 && docker compose up -d
+"""
 
 import argparse
-import json
+import hashlib
 from pathlib import Path
 import sys
 
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parents[1]))  # repo root, for `software`
 
-# Use this checkout when the example is launched directly from any directory.
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parents[3] if len(SCRIPT_DIR.parents) > 3 else None
-if REPO_ROOT is not None:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from chainseed.compiler import ChainSeedDocker  # noqa: E402
 from seedemu.compiler import Platform  # noqa: E402
-from seedemu.core import Emulator  # noqa: E402
+from seedemu.core import Binding, Emulator, Filter  # noqa: E402
 from seedemu.layers import Base, Routing  # noqa: E402
-from chain_setup import add_chain  # noqa: E402
+
+from software.core import install  # noqa: E402
+from software.core.files import place_files  # noqa: E402
+from software.core.payload import PayloadPackage  # noqa: E402
+from software.ransom_payment.service import RansomPayment  # noqa: E402
+from software.ransomware.service import Ransomware  # noqa: E402
+
+ASN = 151                      # AS180 is taken on the lab machine by an older run
+VICTIMS = 3
+DOCUMENTS = "/home/seed/Documents"
+FILES = HERE / "victim_files"
 
 
-LAB_DIR = "/opt/wannacry-v2"
-CORPUS_DIR = "/home/seed/import_folder"
-
-
-# The victim host holds the infected endpoint tooling (payload, ransom-note UI,
-# baseline verification). The attacker host holds only the attacker-side
-# tooling; attacker_priv is born there and never leaves it.
-VICTIM_FILES = (
-    "file_generator.py",
-    "prepare_participant.py",
-    "ransomware.py",
-    "ransom_chain.py",
-    "check_state.py",
-    "participant.py",
-    "wallet.py",
-    "terminal_ui.py",
-    "wormdoor.py",
-    "decryptor.py",
-    "PARTICIPANT_README.txt",
-)
-ATTACKER_FILES = (
-    "file_generator.py",
-    "ransomware.py",
-    "ransom_chain.py",
-    "wallet.py",
-    "check_state.py",
-)
-
-
-def stage_lab_files(host, names):
-    """Install common runtime deps and copy the given lab files into a host."""
-    host.addSoftware("python3 python3-cryptography python3-pip")
-    host.addBuildCommand("pip3 install --break-system-packages eth-account==0.13.7")
-    for name in names:
-        source = (SCRIPT_DIR / name).read_text(encoding="utf-8")
-        host.setFile(f"{LAB_DIR}/{name}", source)
-
-
-def stage_chain_files(host, config):
-    """Give a host the chain config and the contract ABI."""
-    host.setFile(f"{LAB_DIR}/chain.json", json.dumps(config, indent=2) + "\n")
-    host.setFile(
-        f"{LAB_DIR}/contracts/RansomExchange.abi",
-        (SCRIPT_DIR / "contracts" / "RansomExchange.abi").read_text(encoding="utf-8"),
-    )
-
-
-def build_emulator():
-    """Define the network and both hosts' startup behavior."""
+def build_network(victims: int = VICTIMS):
     emu = Emulator()
     base = Base()
-
-    # AS180 keeps this small example separate from the earlier chain topology.
-    lab_as = base.createAutonomousSystem(180)
-    lab_as.createNetwork("net0", prefix="10.180.0.0/24")
-    lab_as.createRouter("router0").joinNetwork("net0")
-    victim = lab_as.createHost("host_0").joinNetwork("net0")
-    attacker = lab_as.createHost("host_1").joinNetwork("net0")
-
-    stage_lab_files(victim, VICTIM_FILES)
-    victim.setFile(
-        f"{CORPUS_DIR}/READ_ME.txt",
-        (SCRIPT_DIR / "PARTICIPANT_README.txt").read_text(encoding="utf-8"),
-    )
-    victim.appendStartCommand(
-        f"python3 {LAB_DIR}/file_generator.py --target {CORPUS_DIR} && "
-        f"python3 {LAB_DIR}/prepare_participant.py --target {CORPUS_DIR} "
-        f"--participant-id as180-host_0 --state-file {LAB_DIR}/participant.json"
-    )
-    # The delivery inbox stands in for the worm's drop point: it accepts the
-    # attacker public key over HTTP and detonates the already-present payload.
-    victim.appendStartCommand(
-        f"nohup python3 {LAB_DIR}/wormdoor.py --port 4450 --target {CORPUS_DIR} "
-        f"> {LAB_DIR}/wormdoor.log 2>&1 &"
-    )
-
-    stage_lab_files(attacker, ATTACKER_FILES)
-
+    lab = base.createAutonomousSystem(ASN)
+    lab.createNetwork("net0")
+    lab.createRouter("router0").joinNetwork("net0")
+    names = []
+    for index in range(1, victims + 1):
+        name = f"victim{index}"
+        lab.createHost(name).joinNetwork("net0")
+        emu.addBinding(Binding(name, filter=Filter(asn=ASN, nodeName=name)))
+        names.append(name)
+    lab.createHost("attacker").joinNetwork("net0")
+    emu.addBinding(Binding("attacker", filter=Filter(asn=ASN, nodeName="attacker")))
     emu.addLayer(base)
     emu.addLayer(Routing())
-    config = add_chain(emu, lab_as)
-    stage_chain_files(victim, config)
-    stage_chain_files(attacker, config)
+    return emu, names
+
+
+def check_state_package(suffix: str) -> PayloadPackage:
+    """The case's own read-only checker (baseline lives here, not in software/)."""
+    baseline = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in FILES.iterdir()}
+    files = install.runtime_files("ransomware", "ransom_payment")
+    files["yomcases/__init__.py"] = ""
+    files["yomcases/y51_check_state.py"] = (HERE / "check_state.py").read_text(encoding="utf-8")
+    files.update(install.launcher("y51-check-state", "yomcases.y51_check_state"))
+    return PayloadPackage("y51_check", files,
+                          {"y51_check": {"folder": DOCUMENTS, "suffix": suffix,
+                                         "baseline": baseline}})
+
+
+def build():
+    emu, victims = build_network()
+    place_files(emu, victims, FILES, DOCUMENTS)
+
+    payment = RansomPayment(price_eth=1).attachTo(emu, asn=ASN, attacker="attacker")
+    ransom = (Ransomware.preset("wannacry")
+              .setTargets([DOCUMENTS])
+              .addExtensions([".md"])            # report.md is part of the story
+              .setNote("READ_ME.txt", (HERE / "participant_note.txt").read_text(encoding="utf-8"))
+              .setTrigger("manual")
+              .setPayment(payment))
+    for victim in victims:
+        ransom.install(victim)
+    emu.addLayer(ransom.service())
+
+    checker = check_state_package(".WNCRY")
+    from seedemu.core import Layer
+
+    class CheckState(Layer):
+        def __init__(self):
+            super().__init__()
+            self.addDependency("Ransomware", False, False)
+
+        def getName(self):
+            return "Y51CheckState"
+
+        def render(self, emulator):
+            for victim in victims:
+                install.install_package(emulator, victim, checker)
+
+    emu.addLayer(CheckState())
     return emu
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--platform", choices=["amd", "arm"], default="amd")
-    parser.add_argument("--output", type=Path, default=SCRIPT_DIR / "output")
-    parser.add_argument(
-        "--override", action="store_true", help="replace an existing output directory"
-    )
+    parser.add_argument("--output", type=Path, default=HERE / "out-y51")
+    parser.add_argument("--no-map", action="store_true", help="skip the Internet Map containers")
     args = parser.parse_args()
 
-    platform = Platform.AMD64 if args.platform == "amd" else Platform.ARM64
-    output = args.output.expanduser().resolve()
-    output.parent.mkdir(parents=True, exist_ok=True)
+    from chainseed.compiler import ChainSeedDocker
 
-    emu = build_emulator()
+    emu = build()
     emu.render()
-    compiler = ChainSeedDocker(platform=platform)
-    # seedemu 2.0.0: the Internet Map is attached as a container bundle,
-    # no longer via the internetMapEnabled compiler flag.
-    from seedemu.containerBundle import InternetMap
+    compiler = ChainSeedDocker(platform=Platform.AMD64 if args.platform == "amd" else Platform.ARM64)
+    install.use_base_image(compiler, emu)
+    if not args.no_map:
+        # seedemu 2.0.0: the Internet Map is a container bundle.
+        from seedemu.containerBundle import InternetMap
 
-    map_bundle = InternetMap(emu, ".map.seed")
-    map_bundle.setPorts(list(range(8081, 8089)))
-    compiler.addContainerBundle(map_bundle)
-    emu.compile(compiler, str(output), override=args.override)
+        map_bundle = InternetMap(emu, ".y51.map.seed")
+        map_bundle.setPorts(list(range(8081, 8089)))
+        compiler.addContainerBundle(map_bundle)
+    output = args.output.expanduser().resolve()
+    emu.compile(compiler, str(output), override=True)
     print(f"Docker configuration written to {output}")
 
 
