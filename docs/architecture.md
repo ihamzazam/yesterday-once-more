@@ -141,14 +141,31 @@ payment or sinkhole.
 
 Places where reality forced a change from the spec. Each one is deliberate.
 
-_(filled in per phase, see below)_
+### Phase 1
+
+| # | Spec | Reality / what we did |
+|---|---|---|
+| D1 | Y51 on AS180 | **AS151** (`10.151.0.0/24`). The lab machine still has an old `output_net_180_net0` network and `as180h-*` containers with fixed names; a new AS180 cannot come up next to them. |
+| D2 | `software/worm/` etc. | snake_case as in the spec; Prof. Du's Title_Case skeleton folders (`Worm_Service`, `Ransomware_Service`, `Vulnerable_Server`) were renamed. `BGP_Hijacking_Service`, `Botnet_Service` untouched. |
+| D3 | `RansomPayment(price_eth=...)` | The price is the contract constant `RANSOM_WEI` (chainseed's deploy cannot pass constructor args). `price_eth` is checked against it at build time; a mismatch fails. To change it: edit the `.sol`, rerun `contracts/compile_contract.py` (solc 0.8.20, `evm_version=london`). |
+| D4 | deploy-gas fix inside `ransom_payment/` | chainseed's utility server creates its deployer account at **run time**, and the contract makes its deployer the attacker, so v2 copied that key by hand. `ransom_payment` now generates the key at build time and patches the utility node's generated `fund_account.py` / `deploy_contract.py` (read preset key; gas 4.5M; fail on reverted receipt). Each patch must match exactly once, or the build fails loudly. |
+| D5 | watcher on attacker host, no cross-piece imports | Answering a request needs the ransomware's attacker key. The watcher runs a **release command** (stdin: on-chain blob, stdout: reply). The ransomware supplies it as a Payload Package via `setPayment()` → `payment.setReleaseTool(pkg, argv)`. |
+| D6 | services resolve vnodes via `emulator.getBindingFor` | seedemu only resolves vnodes that some seedemu Service has a Server on (`getBindingFor` and `resolvVnode` both fail for a plain host such as `attacker`). `core.install.resolve_node` falls back to matching the Binding's filter (asn / nodeName / ip) and requires exactly one match. |
+| D7 | prebuilt base image | `images/yom-base` → `yom-base:1` (FROM `seedemu-base:2.0` + python3, cryptography, eth-account 0.13.7, user `seed`). On this machine seedemu's images only existed under hashed dummy names, so they were given their real names with `docker tag` (nothing deleted). `use_base_image()` declares the seedemu-base software subset so the compiler adds no apt step. |
+| D8 | payment client = `register` / `pay` / `await_key` | The v2 UI also needs wallet and exchange screens, so the client also exposes `create_wallet`, `balance`, `lookup`, `buy`, `contract_status`. All are still chain-free from the ransomware's point of view. |
+| D9 | UI "the same as v2" | Same screens, keys and wording, with these unavoidable differences: inspection says `ORIGINAL — not encrypted` (no baseline in the ransomware), and the grant/decryptor text says *AES-GCM integrity* instead of *baseline*. `Recorded state` now shows the live state (`PREPARED` / `ENCRYPTED` / `KEY GRANTED` / `RECOVERED`; v2 always showed `PREPARED`). The commands are `yom-ransomware menu` / `yom-ransomware decrypt` instead of `python3 /opt/wannacry-v2/...`, and paths are under `/opt/yom`. |
+| D10 | — | The on-chain request is the displayed request JSON (now with a `scheme` field), not only the sealed `victim_priv`. The keylog no longer stores ciphertexts; the envelopes on disk are the only copy. AAD = host id + full original path. Decryption verifies **every** tag before writing any file. |
+| D11 | `wannacry` extension preset | The real list has no `.md`, so Y51 adds it (`.addExtensions([".md"])`) for `report.md`. |
+| D12 | shared event log | One JSON-lines file per host (`/opt/yom/var/events.jsonl`), same format everywhere; no central collector yet. |
+| D14 | — | Recompiling deletes the output folder, and the map's traffic observer writes root-owned `pcap/` files into it. `emulator.py` refuses to recompile while its stack runs; clean with `docker run --rm -v $PWD/out-y51:/w yom-base:1 sh -c 'rm -rf /w/*'` after `docker compose down`. |
+| D13 | — | The Internet Map hostnames get the suffix `.y51.map.seed` so they don't collide with other experiments on the machine. |
 
 ## Status
 
 | Phase | Scope | State |
 |---|---|---|
 | 0 | recon | done |
-| 1 | core + ransomware + ransom_payment, Y51 without worm | in progress |
+| 1 | core + ransomware + ransom_payment, Y51 without worm | **done** — 33 unit tests; headless pay-and-recover passes on the real chain (AS151, ~40 s per victim); v2 vs new UI diffed with identical keystrokes: same 194 lines, differences only those in D9 |
 | 2 | vulnerable_server | — |
 | 3 | worm + sinkhole | — |
 | 4 | thin Y51 + Y11 Morris | — |
