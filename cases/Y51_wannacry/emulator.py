@@ -98,6 +98,18 @@ def build():
     return emu
 
 
+def refuse_if_running(output: Path):
+    """Recompiling deletes the output folder; never do that under a live stack."""
+    import subprocess
+
+    if not (output / "docker-compose.yml").exists():
+        return
+    running = subprocess.run(["docker", "compose", "ps", "-q"], cwd=output,
+                             capture_output=True, text=True).stdout.strip()
+    if running:
+        raise SystemExit(f"{output.name} is running; run `docker compose down` in it first")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -120,6 +132,7 @@ def main():
         map_bundle.setPorts(list(range(8081, 8089)))
         compiler.addContainerBundle(map_bundle)
     output = args.output.expanduser().resolve()
+    refuse_if_running(output)
     emu.compile(compiler, str(output), override=True)
     print(f"Docker configuration written to {output}")
 
