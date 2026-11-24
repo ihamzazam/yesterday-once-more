@@ -55,9 +55,24 @@ Two safety nets come with it:
 - building the emulation prints a warning when ASLR is on;
 - the worm refuses to launch and prints the fix, instead of crashing victims.
 
+Switch ASLR off before or after the lab starts, it makes no difference: the
+vulnerable server waits until it is off before it starts. That matters because
+a program that was started while ASLR was on keeps randomising its children.
+
 The addresses are not written down anywhere. The launcher runs its own copy
 of `stack` the same way the server does, reads what it prints, and passes the
 two numbers down inside the worm body.
+
+## Two traps in the base image, handled by the installer
+
+- **zsh swallows the shell an exploit gets.** This image's `/root/.bashrc`
+  is just `exec zsh`. Bash also reads that file when it is started with `-c`
+  and its input is a network connection, which is exactly the situation an
+  exploit creates. So the shell turned into zsh and the exploit's command
+  never ran. Dr. Du's example works around it by deleting the file. Here it
+  is changed to run zsh only for interactive shells, so people keep zsh.
+- **Imported files are not executable.** A file put on a node arrives with
+  no executable bit, so the installer sets it when the machine boots.
 
 ## Adding a vulnerability
 

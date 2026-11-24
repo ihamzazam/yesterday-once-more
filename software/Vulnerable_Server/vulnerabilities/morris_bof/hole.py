@@ -12,6 +12,21 @@ from .yom_morris_bof.entry import MorrisBofEntry, aslr_setting
 
 ASSETS = Path(__file__).resolve().parent / "assets"
 
+#: The base image's /root/.bashrc is just "exec zsh". Bash also reads that file
+#: when it is started with -c and its input is a network socket (a rule left
+#: over from rsh). So the shell an exploit gets would turn into zsh and never
+#: run the exploit's command. Dr. Du's example works around it by deleting the
+#: file; we keep zsh for people and stop it from swallowing non-interactive
+#: shells. Only that exact file is touched.
+FIX_SHELL = (
+    'if [ "$(cat /root/.bashrc 2>/dev/null)" = "exec zsh" ]; then '
+    "printf '[[ $- == *i* ]] && exec zsh\\n' > /root/.bashrc; fi"
+)
+GUARDED_BASHRC = "[[ $- == *i* ]] && exec zsh\n"
+
+#: The server starts only once the host does not randomise addresses.
+WAIT_FOR_ASLR_OFF = 'until [ "$(cat /proc/sys/kernel/randomize_va_space)" = 0 ]; do sleep 2; done; '
+
 
 class MorrisBufferOverflow(Vulnerability):
     name = "morris-bof"
@@ -21,10 +36,13 @@ class MorrisBufferOverflow(Vulnerability):
     def install(self, node):
         for binary in ("server", "stack"):
             node.importFile(str(ASSETS / binary), "/bof/{}".format(binary))
+        node.appendStartCommand(FIX_SHELL)
         node.appendStartCommand("chmod +x /bof/server /bof/stack")
-        # Started the way his example starts it. Whatever this server and the
-        # worm print on this machine shows up in `docker logs`.
-        node.appendStartCommand("cd /bof && ./server", fork=True)
+        # Started the way his example starts it, but only once ASLR is off. A
+        # program keeps randomising its children if it was started while ASLR
+        # was on, so starting earlier would leave a server the exploit cannot
+        # hit. Whatever the server and the worm print shows up in `docker logs`.
+        node.appendStartCommand(WAIT_FOR_ASLR_OFF + "cd /bof && ./server", fork=True)
 
     def exploit(self):
         return MorrisBofEntry(port=self.port)

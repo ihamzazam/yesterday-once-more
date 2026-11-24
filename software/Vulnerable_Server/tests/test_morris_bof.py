@@ -2,6 +2,7 @@
 
 import hashlib
 import io
+import os
 import shutil
 import socket
 import subprocess
@@ -12,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from software.Vulnerable_Server import MorrisBufferOverflow, VulnerableServer
+from software.Vulnerable_Server.vulnerabilities.morris_bof import hole
 from software.Vulnerable_Server.vulnerabilities.base import Vulnerability
 from software.Vulnerable_Server.vulnerabilities.morris_bof import yom_morris_bof
 from software.Vulnerable_Server.vulnerabilities.morris_bof.yom_morris_bof import entry
@@ -127,9 +129,16 @@ def push(path, port):
     raise AssertionError("nobody listened for the body on port {}".format(port))
 
 
-def run_like_a_victim(command):
-    return subprocess.Popen(["bash", "-c", command], stdin=subprocess.DEVNULL,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+def run_like_a_victim(command, home):
+    """Start the command the way the shellcode does: bash -c, with a connection as input."""
+    ours, theirs = socket.socketpair()
+    process = subprocess.Popen(
+        ["bash", "-c", command], stdin=ours.fileno(), stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, env={"PATH": os.environ["PATH"], "HOME": str(home)},
+    )
+    ours.close()
+    process.peer = theirs                 # kept open: the other end of the "exploit's" line
+    return process
 
 
 def test_the_command_really_works(tmp_path):
@@ -146,9 +155,11 @@ def test_the_command_really_works(tmp_path):
     marker = home / "ran.txt"
     stand_in_body(body, marker)
     command = entry.bootstrap("127.0.0.1", body_port, answer_port, home=str(home))
+    no_shell_setup = tmp_path / "home"                     # so the tester's own ~/.bashrc stays out
+    no_shell_setup.mkdir()
 
     # The first time on this machine: the body lands and its worm starts.
-    victim = run_like_a_victim(command)
+    victim = run_like_a_victim(command, no_shell_setup)
     push(body, body_port)
     output = victim.communicate(timeout=20)[0].decode()
     assert victim.returncode == 0, output
@@ -160,7 +171,7 @@ def test_the_command_really_works(tmp_path):
     answer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     answer.bind(("127.0.0.1", answer_port))
     answer.settimeout(5)
-    victim = run_like_a_victim(command)
+    victim = run_like_a_victim(command, no_shell_setup)
     push(body, body_port)
     assert victim.wait(timeout=20) == 0
     assert answer.recvfrom(16)[0].strip() == b"A"              # "already infected"
@@ -213,9 +224,66 @@ def test_installer_puts_the_hole_on_the_node():
     MorrisBufferOverflow().install(node)
     assert [path for path, _ in node.files] == ["/bof/server", "/bof/stack"]
     assert node.commands == [
+        (hole.FIX_SHELL, False),
         ("chmod +x /bof/server /bof/stack", False),
-        ("cd /bof && ./server", True),
+        (hole.WAIT_FOR_ASLR_OFF + "cd /bof && ./server", True),
     ]
+
+
+def test_the_server_waits_for_aslr_to_go_off(tmp_path):
+    """Switching ASLR off after the lab has started must work too."""
+    knob = tmp_path / "randomize_va_space"                 # stands in for the kernel's file
+    knob.write_text("2\n")
+    loop = (hole.WAIT_FOR_ASLR_OFF + "echo server-started").replace(
+        "/proc/sys/kernel/randomize_va_space", str(knob))
+    waiting = subprocess.Popen(["bash", "-c", loop], stdout=subprocess.PIPE, text=True)
+
+    time.sleep(2.5)
+    assert waiting.poll() is None                          # still waiting: the knob is not 0
+
+    knob.write_text("0\n")
+    output, _ = waiting.communicate(timeout=10)
+    assert waiting.returncode == 0 and output == "server-started\n"
+
+
+def run_with_socket_input(command, home):
+    """Run a shell command the way an exploit does: with a connection as input."""
+    ours, theirs = socket.socketpair()
+    try:
+        return subprocess.run(
+            ["bash", "-c", command], stdin=ours.fileno(), capture_output=True, timeout=20,
+            env={"PATH": os.environ["PATH"], "HOME": str(home)},
+        )
+    finally:
+        ours.close()
+        theirs.close()
+
+
+def test_why_the_shell_fix_is_needed_and_that_it_works(tmp_path):
+    """Bash reads ~/.bashrc when started with -c and a connection as input."""
+    home = tmp_path / "home"
+    home.mkdir()
+
+    (home / ".bashrc").write_text("exec true\n")          # a stand-in for the image's "exec zsh"
+    swallowed = run_with_socket_input("printf 'ran\\n'", home)
+    assert swallowed.stdout == b""                        # the command never ran
+
+    (home / ".bashrc").write_text(hole.GUARDED_BASHRC)
+    fixed = run_with_socket_input("printf 'ran\\n'", home)
+    assert fixed.stdout == b"ran\n"
+
+
+def test_the_shell_fix_rewrites_only_the_known_file(tmp_path):
+    bashrc = tmp_path / ".bashrc"
+    command = hole.FIX_SHELL.replace("/root/.bashrc", str(bashrc))
+
+    bashrc.write_text("exec zsh\n")
+    subprocess.run(["bash", "-c", command], check=True)
+    assert bashrc.read_text() == hole.GUARDED_BASHRC
+
+    bashrc.write_text("# somebody's own shell setup\n")
+    subprocess.run(["bash", "-c", command], check=True)
+    assert bashrc.read_text() == "# somebody's own shell setup\n"
 
 
 def test_launcher_gets_an_executable_copy_of_stack():
