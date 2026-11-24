@@ -52,6 +52,16 @@ def test_round_trip(yom_root, documents, scheme):
     assert rw.state() == engine.RECOVERED
 
 
+def test_file_modes_survive(yom_root, documents):
+    (documents / "notes.txt").chmod(0o640)
+    rw, keys = setup(yom_root, documents, extensions=None)
+    rw.detonate()
+    assert (documents / ("notes.txt" + SUFFIX)).stat().st_mode & 0o777 == 0o640
+    file_key = rw.accept(json.loads(engine.release(keys, rw.request_blob(rw.request()))))
+    rw.recover(file_key, **QUIET)
+    assert (documents / "notes.txt").stat().st_mode & 0o777 == 0o640
+
+
 def test_detonate_is_idempotent(yom_root, documents):
     rw, _ = setup(yom_root, documents, extensions=None)
     first = rw.detonate()

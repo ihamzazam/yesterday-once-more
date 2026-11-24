@@ -27,10 +27,15 @@ def unb64(text: str) -> bytes:
     return base64.b64decode(text.encode("ascii"))
 
 
-def write_atomic(path: Path, data: bytes):
-    """Replace one file after flushing its complete new contents to disk."""
+def write_atomic(path: Path, data: bytes, mode: int = None):
+    """Replace one file after flushing its complete new contents to disk.
+
+    mkstemp creates 0600 files; pass ``mode`` for files people should read.
+    """
     handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=".lab-")
     try:
+        if mode is not None:
+            os.fchmod(handle, mode)
         with os.fdopen(handle, "wb") as stream:
             stream.write(data)
             stream.flush()
