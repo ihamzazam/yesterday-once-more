@@ -111,11 +111,11 @@ class Engine:
                 prepare(self)
         self._lock()
         self._listen()
+        if mode == LAUNCH:
+            self._launch()          # measures what the break-in needs; that goes into the body
         # Every machine passes the same body onward: this folder and the settings.
         self.body = body.pack(self.home, self.manifest.get("packages", []), self._manifest_to_ship())
-        if mode == LAUNCH:
-            self._launch()
-        else:
+        if mode == ARRIVE:
             self._arrive()
         self._spread()
 

@@ -53,15 +53,20 @@ class ListScanner:
 class OneByOne:
     SLOT = "entry"
 
-    def __init__(self, fail=(), refuse=()):
+    def __init__(self, fail=(), refuse=(), measured=None):
         self.fail = list(fail)
         self.refuse = list(refuse)
+        # Stands for something the launcher measures before it attacks, such
+        # as the addresses of `stack`: it has to travel inside the body.
+        self.measured = measured
         self.hits = []
+
     def check_host(self):
+        self.measured = "measured here"
         return list(self.refuse)
 
     def break_in(self, target, worm_body):
-        self.hits.append((target, worm_body[:2]))
+        self.hits.append((target, worm_body))
         return None if target in self.fail else "arrived"
 
 
@@ -205,7 +210,7 @@ def test_launch_packs_a_body_and_attacks_everyone(tmp_path):
     assert [record["target"] for record in attempts][:3] == ["a", "b", "c"]
     assert all(record["result"] == "arrived" for record in attempts)
     assert log[-1]["event"] == "halted" and log[-1]["reason"] == "time limit"
-    assert engine.entry.hits[0][1] == b"\x1f\x8b"           # every attempt got a gzip body
+    assert all(worm_body[:2] == b"\x1f\x8b" for _, worm_body in engine.entry.hits)   # a gzip body each time
 
 
 def test_a_victim_that_does_not_answer_is_tried_again_later(tmp_path):
@@ -237,7 +242,8 @@ def test_an_arrived_worm_answers_its_infector_and_passes_the_body_on(tmp_path, m
                                          announce_port=infector.getsockname()[1]))
     monkeypatch.setenv("FROM", "127.0.0.1")
 
-    Engine(home).run("run")
+    engine = Engine(home)
+    engine.run("run")
 
     assert infector.recvfrom(64)[0] == b"ARRIVED"
     log = events(home)
@@ -245,6 +251,17 @@ def test_an_arrived_worm_answers_its_infector_and_passes_the_body_on(tmp_path, m
     assert kinds[0] == "arrived" and log[0]["infector"] == "127.0.0.1"
     assert kinds[1:-1] == ["attempt"] * 3          # it passed the body on to everyone
     assert kinds[-1] == "halted"
+    assert all(worm_body[:2] == b"\x1f\x8b" for _, worm_body in engine.entry.hits)
+
+
+def test_the_body_carries_what_the_launcher_measured(tmp_path):
+    """A live run once shipped empty addresses: the body was packed before measuring."""
+    home = make_home(tmp_path)
+    engine = Engine(home)
+    engine.run("launch")
+    with tarfile.open(fileobj=io.BytesIO(engine.entry.hits[0][1])) as archive:
+        shipped = json.load(archive.extractfile("worm.json"))
+    assert shipped["entry"]["settings"]["measured"] == "measured here"
 
 
 def test_the_stop_signal_halts_the_worm(tmp_path):
