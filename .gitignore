@@ -12,3 +12,9 @@ __pycache__/
 
 # Editors / OS
 .DS_Store
+
+# Contract bytecode is source: the lab ships it precompiled
+!software/ransom_payment/contracts/*.bin
+
+# Emulator outputs of the toolkit cases
+out-*/
