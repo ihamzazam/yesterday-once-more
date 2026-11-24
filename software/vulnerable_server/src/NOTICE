@@ -1,0 +1,6 @@
+server.c and stack.c come from the SEED Emulator Morris-worm / WannaCry example
+(seed-emulator archive/.not_ready_examples/25-wannacry/container_files/server,
+commit 93ec1af7), which is based on the SEED buffer-overflow lab by Wenliang Du.
+
+YOM changes: server.c takes its port from argv[1] (default 9090) and main()
+returns int. stack.c is unchanged. The Makefile is new.
