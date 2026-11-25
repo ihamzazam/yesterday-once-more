@@ -49,7 +49,7 @@ class RansomwarePayload:
         """The operator's side: the chain's details, the contract's key, the `ransom` command."""
         import json
 
-        from software.common.staging import add_command
+        from software.Core.staging import add_command
 
         from . import paths
 

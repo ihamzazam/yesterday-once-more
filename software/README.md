@@ -73,10 +73,10 @@ folder can travel inside the worm body to the next machine.
 
 ## Shared helpers
 
-[`common/`](common/) holds what every installer needs: putting a runtime
-folder on a node, giving a node a one-word command, reading a node's address.
-It is the one folder here that is not a piece, and the only addition to the
-folder list in the repository's README.
+[`Core/`](Core/) holds what every installer needs: putting a runtime folder
+on a node, giving a node a one-word command, reading a node's address, and a
+fake worm for testing a part without Docker. It is the one folder here that
+is not a piece of the attack.
 
 ## Tests
 

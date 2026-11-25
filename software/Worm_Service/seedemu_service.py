@@ -20,7 +20,7 @@ from pathlib import Path
 
 from seedemu.core import Server, Service
 
-from software.common.staging import HOME, RUNTIME_NEEDS, add_command, address_of, runtime_dir, stage_tree
+from software.Core.staging import HOME, RUNTIME_NEEDS, add_command, address_of, runtime_dir, stage_tree
 from software.Switch_Service import DnsSwitch
 from software.Vulnerable_Server import VulnerableServer
 from software.Worm_Service.yom_worm import builtin

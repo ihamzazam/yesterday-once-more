@@ -15,7 +15,7 @@ from pathlib import Path
 from seedemu.core import Service
 from seedemu.services import DomainNameServer, DomainNameService
 
-from software.common.staging import HOME, add_command, address_of, stage_tree
+from software.Core.staging import HOME, add_command, address_of, stage_tree
 
 RUNTIME_DIR = Path(__file__).resolve().parent / "yom_switch"
 

@@ -19,7 +19,7 @@ from eth_abi import encode as abi_encode
 from software.Ransomware_Service import Ransomware, RansomwarePayload
 from software.Ransomware_Service import seedemu_service
 from software.Ransomware_Service.yom_ransomware import chain, files, keys, operator, paths, victim, wallet
-from software.common.testing import FakeWorm
+from software.Core.testing import FakeWorm
 
 DOCUMENTS = {
     "notes.txt": "Team handover notes\nPrepare the weekly report on Friday.\n",

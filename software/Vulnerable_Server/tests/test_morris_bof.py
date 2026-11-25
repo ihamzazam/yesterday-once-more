@@ -17,7 +17,7 @@ from software.Vulnerable_Server.vulnerabilities.morris_bof import hole
 from software.Vulnerable_Server.vulnerabilities.base import Vulnerability
 from software.Vulnerable_Server.vulnerabilities.morris_bof import yom_morris_bof
 from software.Vulnerable_Server.vulnerabilities.morris_bof.yom_morris_bof import entry
-from software.common.testing import FakeWorm
+from software.Core.testing import FakeWorm
 
 # sha256 of the first 51 bytes of the shellcode in Dr. Du's worm.py. If this
 # fails, the stub was edited: it has to stay exactly his.
