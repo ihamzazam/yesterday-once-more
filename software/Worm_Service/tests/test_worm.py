@@ -5,6 +5,7 @@ import json
 import socket
 import sys
 import tarfile
+import time
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from software.Vulnerable_Server import MorrisBufferOverflow, VulnerableServer
 from software.Vulnerable_Server.vulnerabilities.morris_bof import MorrisBofEntry
 from software.Worm_Service import NoPayload, Pace, ShuffleScanner, Worm
 from software.Worm_Service.yom_worm import body, plugs
+from software.Worm_Service.yom_worm import engine as engine_module
 from software.Worm_Service.yom_worm.engine import Engine
 from software.Worm_Service.yom_worm.spec import SLOTS, describe
 
@@ -312,7 +314,7 @@ def test_the_loader_finds_parts_by_name_and_says_when_one_is_missing(tmp_path):
 
 # ---- the installer, on a real emulator ----
 
-def build_lab(attach_hole=True, domain="stop.yom.test"):
+def build_lab(attach_hole=True, domain="stop.yom.test", switch_domain=None):
     from seedemu import Base, Emulator, Routing
     from seedemu.core import Binding, Filter
 
@@ -325,7 +327,7 @@ def build_lab(attach_hole=True, domain="stop.yom.test"):
     emu.addLayer(base)
     emu.addLayer(Routing())
 
-    switch = DnsSwitch()
+    switch = DnsSwitch(domain=switch_domain or domain)
     emu.addLayer(switch)
     emu.addBinding(Binding(switch.vnode, filter=Filter(asn=158, nodeName="switch")))
 
@@ -422,7 +424,7 @@ def test_installer_refuses_a_worm_whose_hole_is_nowhere():
 
 
 def test_installer_refuses_a_stop_signal_outside_the_switch_zone():
-    emu, _, _, _ = build_lab(domain="stop.example.com")
+    emu, _, _, _ = build_lab(domain="stop.example.com", switch_domain="stop.yom.test")
     with pytest.raises(ValueError, match="not a name in the switch's zone"):
         emu.render()
 
@@ -451,4 +453,90 @@ def test_manifest_round_trips_through_the_loader(tmp_path):
     for slot in SLOTS:
         rebuilt = plugs.build(registry, slot, manifest[slot])
         assert type(rebuilt).__name__ == manifest[slot]["type"]
-        assert vars(rebuilt) == manifest[slot]["settings"]
+        # Everything that was written comes back; a part may also keep things of
+        # its own that must not travel, such as the kill switch's "already asked".
+        settings = manifest[slot]["settings"]
+        assert {name: vars(rebuilt)[name] for name in settings} == settings
+
+
+# ---- the Internet Map ----
+
+def map_add_on(tmp_path, monkeypatch, flash_seconds=0):
+    """A stand-in for the map's add-on: it records every action it is asked for."""
+    actions_file = tmp_path / "map-actions"
+    hook = tmp_path / "submit_event.sh"
+    hook.write_text('#!/bin/bash\necho "$*" >> ' + str(actions_file) + "\n")
+    monkeypatch.setattr(engine_module, "MAP_HOOK", str(hook))
+    monkeypatch.setattr(engine_module, "MAP_FLASH_SECONDS", flash_seconds)
+    return tmp_path / "map-actions"
+
+
+def test_on_arrival_the_worm_tells_the_map_to_flash_and_highlight(tmp_path, monkeypatch):
+    """The same two actions Dr. Du's Morris worm asks the map for."""
+    actions = map_add_on(tmp_path, monkeypatch)
+    home = make_home(tmp_path, pace=dict(PACE, max_seconds=1.0, announce_port=free_udp_port()))
+    monkeypatch.setenv("FROM", "127.0.0.1")
+    Engine(home).run("run")
+    deadline = time.monotonic() + 5
+    while not actions.exists() or "highlight" not in actions.read_text():
+        assert time.monotonic() < deadline, actions.read_text() if actions.exists() else "no action"
+        time.sleep(0.05)
+    assert actions.read_text().splitlines()[:2] == ["-a flash", "-a highlight"]
+    assert [record for record in events(home) if record["event"] == "map"][0]["ok"] is True
+
+
+def test_a_halted_worm_is_taken_off_the_map(tmp_path, monkeypatch):
+    actions = map_add_on(tmp_path, monkeypatch)
+    home = make_home(tmp_path, governor=FAKE.Signal("stop"),
+                     pace=dict(PACE, announce_port=free_udp_port()))
+    monkeypatch.setenv("FROM", "127.0.0.1")
+    Engine(home).run("run")                    # it arrived, so it was shown on the map
+    told = actions.read_text().splitlines()
+    assert told[0] == "-a flash" and told[-1] == "-a restore"
+
+
+def test_a_machine_that_was_never_on_the_map_is_not_taken_off_it(tmp_path, monkeypatch):
+    """The launcher never arrives anywhere, so the map has nothing to restore."""
+    actions = map_add_on(tmp_path, monkeypatch)
+    home = make_home(tmp_path, governor=FAKE.Signal("stop"),
+                     pace=dict(PACE, announce_port=free_udp_port()))
+    Engine(home).run("launch")
+    assert not actions.exists() or "restore" not in actions.read_text()
+
+
+def test_without_the_map_add_on_nothing_is_told_to_any_map(tmp_path, monkeypatch):
+    monkeypatch.setattr(engine_module, "MAP_HOOK", str(tmp_path / "not-installed"))
+    home = make_home(tmp_path, pace=dict(PACE, max_seconds=0.5, announce_port=free_udp_port()))
+    monkeypatch.setenv("FROM", "127.0.0.1")
+    Engine(home).run("run")
+    assert not [record for record in events(home) if record["event"] == "map"]
+
+
+def test_every_machine_in_the_lab_asks_the_switch_machine_for_names():
+    emu, hosts, switch, _ = build_lab()
+    emu.render()
+    for name, node in hosts.items():
+        server = "127.0.0.1" if name == "switch" else switch.address
+        # The same two start commands seedemu writes, and first in the script.
+        assert node.getStartCommands()[:2] == [
+            (": > /etc/resolv.conf", False),
+            ('echo "nameserver {}" >> /etc/resolv.conf'.format(server), False),
+        ], name
+
+
+def test_the_worm_says_it_halted_before_it_tells_the_map(tmp_path, monkeypatch):
+    """Telling the map must never delay the stop: the map could be slow or away."""
+    actions = map_add_on(tmp_path, monkeypatch)
+    slow = tmp_path / "submit_event.sh"
+    slow.write_text("#!/bin/bash\necho \"$*\" >> " + str(actions) +
+                    "\ncase \"$*\" in *restore) sleep 4;; esac\n")
+    home = make_home(tmp_path, governor=FAKE.Signal("stop"),
+                     pace=dict(PACE, announce_port=free_udp_port()))
+    monkeypatch.setenv("FROM", "127.0.0.1")
+    monkeypatch.setattr(engine_module, "MAP_CALL_SECONDS", 1)
+    Engine(home).run("run")
+    log = events(home)
+    halted_at = next(i for i, record in enumerate(log) if record["event"] == "halted")
+    restored_at = next(i for i, record in enumerate(log)
+                       if record["event"] == "map" and record["action"] == "restore")
+    assert halted_at < restored_at                      # halted is on record first

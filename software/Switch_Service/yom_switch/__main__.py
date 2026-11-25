@@ -1,10 +1,11 @@
 """The teacher's side of the switch. Run it on the switch's own machine.
 
-    switch stop            the stop signal now exists: every worm stops
-    switch go              the signal is gone: the worm may spread again
-    switch status          is the signal there right now?
+    switch stop            register the kill-switch domain: it answers, every worm stops
+    switch go              unregister it: nothing answers, the worm may spread again
+    switch status          is the domain registered, and does it answer right now?
 
-`set <name>` and `unset <name>` change any other signal by name.
+`set <name>` and `unset <name>` register or unregister any other name in the
+zone.
 
 It changes the DNS record with nsupdate, the same tool Dr. Du's Morris worm
 (control_worm.sh) and his first WannaCry example (add_record.sh) use.
@@ -15,15 +16,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .dnsquery import ask
+from .dnsquery import query
+from .reader import answers
 
 SETTINGS = Path("/opt/yom/switch.json")
 USAGE = "usage: switch stop | go | status | set <name> | unset <name>"
+VERBS = {"stop": "set", "go": "unset", "set": "set", "unset": "unset", "status": "status"}
 
 
-def update(settings, action, label) -> int:
-    """Add or remove one A record on the switch's server."""
-    name = "{}.{}".format(label, settings["zone"])
+def update(settings, action, name) -> int:
+    """Register or unregister one address record on the switch's server."""
     change = (
         "update add {} 5 A {}".format(name, settings["ip"])
         if action == "set"
@@ -36,14 +38,18 @@ def update(settings, action, label) -> int:
     return result.returncode
 
 
-#: verb -> (what it does to the record, the name it does it to unless one is given)
-VERBS = {
-    "stop": ("set", "stop"),
-    "go": ("unset", "stop"),
-    "set": ("set", None),
-    "unset": ("unset", None),
-    "status": ("status", "stop"),
-}
+def describe(settings, name) -> str:
+    """What the worm would conclude right now, step by step."""
+    state, address = query(settings["server"], name, port=settings.get("port", 53))
+    if state is None:
+        return "the switch did not answer"
+    if state == "refused":
+        return "not a name in this zone"
+    if address is None:
+        return "not registered, so nothing answers: the worm spreads"
+    if answers(address, name, settings.get("http_port", 80)):
+        return "registered at {}, and it answers over HTTP: the worm stops".format(address)
+    return "registered at {}, but nothing answers over HTTP: the worm spreads".format(address)
 
 
 def main(argv) -> int:
@@ -53,20 +59,14 @@ def main(argv) -> int:
         print(USAGE)
         return 2
     settings = json.loads(SETTINGS.read_text())
-    action, default = VERBS[verb]
-    label = argv[1] if wants_name else default
-    name = "{}.{}".format(label, settings["zone"])
-
-    if action == "status":
-        answer = ask(settings["server"], name)
-        print("{}: {}".format(name, {
-            "exists": "present, the worm stops",
-            "missing": "absent, the worm spreads",
-            "refused": "not a name in this zone",
-            None: "the switch did not answer",
-        }[answer]))
+    zone = settings["zone"]
+    # The kill switch is the name the worm asks for, www. and all. Other names
+    # are labels inside the zone.
+    name = "{}.{}".format(argv[1], zone) if wants_name else settings["domain"]
+    if verb == "status":
+        print("{}: {}".format(name, describe(settings, name)))
         return 0
-    return update(settings, action, label)
+    return update(settings, VERBS[verb], name)
 
 
 if __name__ == "__main__":

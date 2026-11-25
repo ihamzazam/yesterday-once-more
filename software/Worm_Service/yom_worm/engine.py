@@ -15,6 +15,8 @@ import fcntl
 import json
 import os
 import socket
+import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -25,6 +27,13 @@ from .spec import SLOTS, Pace, describe
 LAUNCH = "launch"
 ARRIVE = "run"
 
+#: The Internet Map's add-on, if the lab has the map and the add-on is
+#: installed. It is the same hook Dr. Du's Morris worm uses.
+MAP_HOOK = "/map-plugins/submit_event.sh"
+MAP_FLASH_SECONDS = 5
+#: Never let a call to the map hold the worm up for longer than this.
+MAP_CALL_SECONDS = 8
+
 
 class Engine:
     def __init__(self, home=None):
@@ -33,6 +42,7 @@ class Engine:
         self.home = Path(home) if home else Path(__file__).resolve().parent.parent
         self.log = make_logger(self.home)
         self.done = set()                  # machines that answered us
+        self.shown_on_map = False           # true once this machine flashed on the map
         self.started = time.monotonic()
 
     # ---- the network, done for the parts ----
@@ -176,6 +186,34 @@ class Engine:
                 ship[slot] = describe(part)
         return ship
 
+    def _tell_map(self, action, then=None, wait=False):
+        """Show this machine on the Internet Map: flash, highlight or restore.
+
+        Does nothing on a lab without the map, or without its add-on. The
+        flash-and-highlight takes five seconds, so it runs in the background
+        and never slows the worm down.
+        """
+        if not os.path.exists(MAP_HOOK):
+            return
+        command = "bash {} -a {}".format(MAP_HOOK, action)
+        if then:
+            command += " && sleep {} && bash {} -a {}".format(MAP_FLASH_SECONDS, MAP_HOOK, then)
+
+        def tell():
+            started = time.monotonic()
+            try:
+                done = subprocess.run(command, shell=True, capture_output=True,
+                                       timeout=MAP_CALL_SECONDS)
+                self.log("map", action=action, ok=done.returncode == 0,
+                         seconds=round(time.monotonic() - started, 1))
+            except (OSError, subprocess.SubprocessError) as error:
+                self.log("map", action=action, ok=False, error=str(error))
+
+        if wait:
+            tell()
+        else:
+            threading.Thread(target=tell, daemon=True).start()
+
     def _arrive(self):
         os.dup2(os.open(os.devnull, os.O_RDONLY), 0)   # we came in through a connection: let it go
         infector = os.environ.get("FROM", "")
@@ -184,6 +222,9 @@ class Engine:
                 self.udp.sendto(b"ARRIVED", (infector, self.announce_port))
                 time.sleep(0.2)
         self.log("arrived", infector=infector)
+        if os.path.exists(MAP_HOOK):
+            self.shown_on_map = True
+            self._tell_map("flash", then="highlight")
         self.payload.run(self)
 
     def _spread(self):
@@ -210,4 +251,6 @@ class Engine:
             time.sleep(self.pace.attempt_delay)
 
     def _halt(self, reason):
-        self.log("halted", reason=reason)
+        self.log("halted", reason=reason)      # first, so that stopping is never delayed
+        if self.shown_on_map:                   # then take it off the map, if it was on
+            self._tell_map("restore", wait=True)

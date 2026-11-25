@@ -1,5 +1,6 @@
 # Emulator build output
 output/
+output-*/
 
 # Python
 __pycache__/

@@ -250,7 +250,7 @@ def build_lab():
     victims.install("vuln-victim1")
     place("vuln-victim1", "victim1")
     worm = Worm(entry=bof.exploit(), payload=ransom.payload,
-                governor=DnsKillSwitch(switch.name("stop")))
+                governor=DnsKillSwitch(switch.kill_switch()))
     emu.addLayer(worm)
     worm.launch_from("zero")
     place("zero", "attacker")
