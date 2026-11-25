@@ -36,7 +36,7 @@ with nothing carried. Mirai is a weak-passwords hole carrying a bot.
 5. Round after round: ask the stop signal, pick a target, break in, hand over
    the body, wait for the target to answer.
 6. On the target, the body unpacks itself to `/tmp/yomw`, answers "arrived",
-   does what it carried, and starts spreading too.
+   tells the Internet Map, does what it carried, and starts spreading too.
 
 Nothing of the worm is put on a victim when the emulation is built. It gets
 there by breaking in, which is what makes it a worm.
@@ -50,6 +50,15 @@ there by breaking in, which is what makes it a worm.
 - **What a victim needs.** The body is Python, so `python3` is added to every
   target. A carried part can ask for more: the ransomware asks for its crypto
   libraries, and they are added to every target and to the launcher.
+
+## The Internet Map
+
+The map is seedemu's own dashboard. With its `submit_event` add-on installed
+(one command, see the examples), a machine **flashes on the map the moment
+the worm arrives on it** and stays highlighted. When the worm stops there,
+the highlight goes away. It is the same add-on Dr. Du's Morris worm uses. On
+a lab without the map, or without the add-on, the worm simply says nothing to
+any map.
 
 ## Running it
 

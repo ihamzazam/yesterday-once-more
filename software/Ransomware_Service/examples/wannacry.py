@@ -7,27 +7,31 @@ chain and gets the key back; the teacher can stop the worm with the switch.
 
 Build and start (from this folder):
 
-    ../../../.venv/bin/python wannacry.py                 build ./output-wannacry
-    cd output-wannacry
-    docker compose -p yom-wannacry up -d --build          the first build takes a while
-    docker compose -p yom-wannacry logs -f ransom-utility  wait for "Contract deployed"
+    ../../../.venv/bin/python wannacry.py                 build ./output
+    cd output
+    docker compose up -d --build          the first build takes a while
+    docker compose logs hnode_159_ransom-utility   wait for "Contract deployed"
+    curl -X POST -H "Content-Type: application/json" -d '{"name": "submit_event"}' \
+         http://localhost:8082/api/v1/install            once: the map add-on that lets
+                                                          infected machines show themselves
+    # the map: http://localhost:8082   (geographic view: http://localhost:8083)
 
 The hole needs ASLR off on the Docker host (switch it off before the lab
 starts, or the vulnerable server waits for it).
 
 Run:
 
-    docker compose -p yom-wannacry exec -d hnode_159_attacker sh -c 'worm launch > /tmp/worm.out 2>&1'
-    docker compose -p yom-wannacry logs hnode_159_victim1          watch it arrive and lock
+    docker compose exec -d hnode_159_attacker sh -c 'worm launch > /tmp/worm.out 2>&1'
+    docker compose logs hnode_159_victim1          watch it arrive and lock
 
 On a victim, open the menu the worm left behind and follow it (wallet,
 exchange, pay, receive the key, decrypt):
 
-    docker compose -p yom-wannacry exec -it hnode_159_victim1 ransom
+    docker compose exec -it hnode_159_victim1 ransom
 
 The attacker answers paid requests (do this while the victim waits):
 
-    docker compose -p yom-wannacry exec hnode_159_attacker ransom watch
+    docker compose exec hnode_159_attacker ransom watch
 """
 
 import sys
@@ -43,11 +47,29 @@ from seedemu.core import Binding, Filter  # noqa: E402
 
 from software.Ransomware_Service import Ransomware  # noqa: E402
 from software.Switch_Service import DnsKillSwitch, DnsSwitch  # noqa: E402
+from software.Core.staging import reset_output  # noqa: E402
 from software.Vulnerable_Server import MorrisBufferOverflow, VulnerableServer  # noqa: E402
 from software.Worm_Service import Worm  # noqa: E402
 
 ASN = 159                                   # change it if another lab uses this number
 VICTIMS = ["victim1", "victim2", "victim3"]
+def add_map(emu, compiler):
+    """The Internet Map, as in the v2 lab.
+
+    It also puts Dr. Du's `submit_event` add-on into the map's server, so that
+    infected machines can show themselves on the map. The add-on still has to
+    be switched on once the lab is up (see the commands at the top).
+    """
+    from seedemu.containerBundle import InternetMap
+
+    map_bundle = InternetMap(emu, ".map.seed")
+    map_bundle.setPorts(list(range(8081, 8089)))
+    add_on = Path(__file__).resolve().parents[2] / "Core" / "map" / "submit_event"
+    server = map_bundle.getContainer("emulator_api_server")
+    for name in ("plugin.json", "submit_event.sh"):
+        server.setFile("/usr/src/app/plugin/submit_event/" + name,
+                       (add_on / name).read_text(encoding="utf-8"))
+    compiler.addContainerBundle(map_bundle)
 
 # The story: the documents each victim has before anything happens.
 DOCUMENTS = {
@@ -101,14 +123,17 @@ def build():
 
     # The worm: its break-in comes from the hole, and it carries the ransomware.
     worm = Worm(entry=bof.exploit(), payload=ransom.payload,
-                governor=DnsKillSwitch(switch.name("stop")))
+                governor=DnsKillSwitch(switch.kill_switch()))
     emu.addLayer(worm)
     worm.launch_from("patient-zero")
     place("patient-zero", "attacker")
 
     emu.render()
-    output = Path(__file__).resolve().parent / "output-wannacry"
-    emu.compile(ChainSeedDocker(platform=Platform.AMD64), str(output), override=True)
+    compiler = ChainSeedDocker(platform=Platform.AMD64)
+    add_map(emu, compiler)
+    output = Path(__file__).resolve().parent / "output"
+    reset_output(output)         # the map leaves root-owned files in it after a run
+    emu.compile(compiler, str(output), override=True)
     print("Docker configuration written to {}".format(output))
 
 

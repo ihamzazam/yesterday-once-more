@@ -29,6 +29,9 @@ connects the pieces, and adds its own story:
 | Vulnerable server | [Vulnerable_Server](Vulnerable_Server/README.md) | built |
 | Worm | [Worm_Service](Worm_Service/README.md) | built |
 | Switch | [Switch_Service](Switch_Service/README.md) | built |
+
+Both example labs also start seedemu's **Internet Map**, where infected
+machines flash.
 | Ransomware | [Ransomware_Service](Ransomware_Service/README.md) | built |
 
 WannaCry is the four of them together, in one lab:

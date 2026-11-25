@@ -7,6 +7,8 @@ helpers keep that the same everywhere.
 
 import inspect
 from pathlib import Path
+import shutil
+import subprocess
 
 #: Where every piece lives inside a node.
 HOME = "/opt/yom"
@@ -60,3 +62,31 @@ def add_command(node, name: str, package: str) -> None:
 def address_of(node) -> str:
     """The node's first IP address. Only meaningful after the emulator renders."""
     return str(node.getInterfaces()[0].getAddress())
+
+
+def reset_output(output: Path, image: str = "handsonsecurity/seedemu-base:2.0") -> None:
+    """Remove a previous build folder, so that the lab can be built again.
+
+    The Internet Map's traffic observer runs as root and writes files into
+    that folder, so a plain removal fails with "Permission denied". Those
+    files are removed through a throwaway container. A lab that is still
+    running is left alone: its files must stay until it is stopped.
+    """
+    output = Path(output)
+    if not output.exists():
+        return
+    running = subprocess.run(["docker", "compose", "ps", "-q"], cwd=output,
+                             capture_output=True, text=True)
+    if running.returncode == 0 and running.stdout.strip():
+        raise SystemExit(
+            f"{output.name} is still running. Stop it first with `docker compose down` in that folder."
+        )
+    try:
+        shutil.rmtree(output)
+    except PermissionError:
+        subprocess.run(
+            ["docker", "run", "--rm", "-v", "{}:/w".format(output.resolve()), image,
+             "sh", "-c", "rm -rf /w/* /w/.[!.]*"],
+            check=True, stdout=subprocess.DEVNULL,
+        )
+        shutil.rmtree(output)

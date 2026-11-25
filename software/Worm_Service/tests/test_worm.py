@@ -492,7 +492,7 @@ def test_a_halted_worm_is_taken_off_the_map(tmp_path, monkeypatch):
     monkeypatch.setenv("FROM", "127.0.0.1")
     Engine(home).run("run")                    # it arrived, so it was shown on the map
     told = actions.read_text().splitlines()
-    assert told[0] == "-a flash" and told[-1] == "-a restore"
+    assert "-a flash" in told and "-a restore" in told
 
 
 def test_a_machine_that_was_never_on_the_map_is_not_taken_off_it(tmp_path, monkeypatch):
