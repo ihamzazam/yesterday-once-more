@@ -82,8 +82,9 @@ server, and gives the same one to the attacker.
 | `Ransomware(documents=...)` | `/home/seed/Documents` | the folder that gets locked |
 | `Ransomware(ransom_wei=...)` | 1 ETH | the ransom; the contract enforces it |
 
-The case creates the documents themselves: they are part of the story. See
-[`examples/wannacry.py`](examples/wannacry.py).
+The case creates the documents themselves: they are part of the story. The
+WannaCry case does it with five files in `documents/`: see
+[`cases/Y51_wannacry`](../../cases/Y51_wannacry/README.md).
 
 ## Ports
 
@@ -100,5 +101,5 @@ here every request is a transaction. A case README should say so.
 ## Tests
 
 From the repository root: `.venv/bin/python -m pytest`. They need no Docker,
-and cover locking real files, the whole exchange on the manual path, and the
-installer on a real emulator.
+and cover locking real files, the whole exchange on the manual path, the
+installer on a real emulator, and that the WannaCry case builds.

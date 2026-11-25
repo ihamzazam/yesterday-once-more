@@ -139,9 +139,14 @@ import the worm package from it: the part has to run on any machine.
 
 ## Example
 
-[`examples/morris_picture.py`](examples/morris_picture.py) is the smallest
-worm lab: three victims, one attacker, one switch, nothing carried. Its
-docstring has the commands.
+The WannaCry case, [`cases/Y51_wannacry`](../cases/Y51_wannacry/README.md), is
+built on this worm. The smallest worm lab is the same lines without a payload:
+
+```python
+worm = Worm(entry=bof.exploit(), governor=DnsKillSwitch(switch.kill_switch()))
+emu.addLayer(worm)
+worm.launch_from("patient-zero")
+```
 
 ## Tests
 

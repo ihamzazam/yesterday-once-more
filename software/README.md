@@ -34,8 +34,8 @@ Both example labs also start seedemu's **Internet Map**, where infected
 machines flash.
 | Ransomware | [Ransomware_Service](Ransomware_Service/README.md) | built |
 
-WannaCry is the four of them together, in one lab:
-[`Ransomware_Service/examples/wannacry.py`](Ransomware_Service/examples/wannacry.py).
+WannaCry is the four of them together, in one case:
+[`cases/Y51_wannacry/emulator.py`](../cases/Y51_wannacry/emulator.py).
 The worm breaks in through the hole carrying the ransomware, the victims are
 locked, a victim pays on the payment chain and gets its documents back, and
 the teacher can stop the worm with the switch.

@@ -13,7 +13,7 @@ import subprocess
 #: Where every piece lives inside a node.
 HOME = "/opt/yom"
 
-_TEXT_SUFFIXES = {".py", ".json", ".sh", ".txt", ".md", ".sol", ".abi"}
+_TEXT_SUFFIXES = {".py", ".json", ".sh", ".txt", ".md", ".csv", ".sol", ".abi"}
 
 
 def stage_tree(node, source: Path, dest: str) -> int:
