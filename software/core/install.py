@@ -25,6 +25,12 @@ BASE_IMAGE_SOFTWARE = ["python3", "python3-pip", "python3-cryptography"]
 BASE_NEEDS = ["python3", "py:cryptography", "py:eth_account"]
 
 NODE_ATTRIBUTE = "yom_packages"
+IMAGE_ATTRIBUTE = "yom_image"
+
+
+def mark_image(node, image: str):
+    """The prebuilt image a node must run on (used by ``use_base_image``)."""
+    node.setAttribute(IMAGE_ATTRIBUTE, image)
 
 
 # --------------------------------------------------------------------------
@@ -182,18 +188,30 @@ def install_package(emulator, node, pkg: PayloadPackage, root: str = ROOT, start
 
 
 def use_base_image(compiler, emulator, image: str = BASE_IMAGE):
-    """Run every toolkit node on the prebuilt base image (see images/)."""
+    """Run every toolkit node on its prebuilt image (see images/).
+
+    Nodes run on ``yom-base:1`` unless a piece marked them for another image
+    with ``mark_image`` (the vulnerable server's nodes run on ``yom-vuln:1``).
+    """
     from seedemu.compiler import DockerImage
     from seedemu.compiler.DockerImageConstant import BASE_IMAGE as SEEDEMU_BASE
 
-    if image not in [img.getName() for img, _ in compiler.getImages()]:
-        # subset: everything the stock seedemu-base image has, so the compiler
-        # does not apt-get install it again on top of ours.
-        compiler.addImage(DockerImage(image, BASE_IMAGE_SOFTWARE, local=False,
-                                      subset=SEEDEMU_BASE))
+    def image_of(node) -> str:
+        return node.getAttribute(IMAGE_ATTRIBUTE, None) or image
+
+    names = {image}
+    for (_, kind, _), obj in emulator.getRegistry().getAll().items():
+        if kind == "hnode" and obj.getAttribute(NODE_ATTRIBUTE, None) is not None:
+            names.add(image_of(obj))
+    for name in sorted(names):
+        if name not in [img.getName() for img, _ in compiler.getImages()]:
+            # subset: everything the stock seedemu-base image has, so the compiler
+            # does not apt-get install it again on top of ours.
+            compiler.addImage(DockerImage(name, BASE_IMAGE_SOFTWARE, local=False,
+                                          subset=SEEDEMU_BASE))
     count = 0
     for (_, kind, _), obj in emulator.getRegistry().getAll().items():
         if kind == "hnode" and obj.getAttribute(NODE_ATTRIBUTE, None) is not None:
-            compiler.setImageOverride(obj, image)
+            compiler.setImageOverride(obj, image_of(obj))
             count += 1
     return count

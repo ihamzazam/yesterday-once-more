@@ -18,3 +18,6 @@ __pycache__/
 
 # Emulator outputs of the toolkit cases
 out-*/
+
+# pytest working dir
+.pytest_cache/
