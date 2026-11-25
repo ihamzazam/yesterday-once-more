@@ -136,14 +136,17 @@ class Engine:
         self.udp.settimeout(0.5)
 
     def _launch(self):
-        check = getattr(self.entry, "check_host", None)
-        if check:
-            problems = check()
-            if problems:
-                for problem in problems:
-                    print("  " + problem, flush=True)
-                self.log("refused", reasons=problems)
-                raise SystemExit(1)
+        # Any part may have a reason the worm must not start from here, and
+        # may measure something here that then travels inside the body.
+        problems = []
+        for part in (self.scanner, self.entry, self.governor, self.payload):
+            check = getattr(part, "check_host", None) if part is not None else None
+            for problem in (check() if check else []):
+                print("  " + problem, flush=True)
+                problems.append(problem)
+        if problems:
+            self.log("refused", reasons=problems)
+            raise SystemExit(1)
         self._await_switch()
         self.log("launch", home=str(self.home))
 

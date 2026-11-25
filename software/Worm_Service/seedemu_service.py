@@ -59,6 +59,12 @@ class Worm(WormPlan, Service):
         # Render after the pieces we look for, when they are in the emulation at all.
         self.addDependency("VulnerableServer", False, True)
         self.addDependency("DnsSwitch", False, True)
+        # A part may need a layer of its own to be installed first (the
+        # ransomware needs its payment chain before anything is written down).
+        for part in self.parts:
+            layer = getattr(type(part), "NEEDS_LAYER", None) if part is not None else None
+            if layer:
+                self.addDependency(layer, False, True)
 
     def launch_from(self, vnode):
         """The machine where the outbreak starts (patient zero)."""
@@ -100,9 +106,31 @@ class Worm(WormPlan, Service):
                 "install it with VulnerableServer(...) first".format(wanted)
             )
         for node in targets:
-            node.addSoftware(*BODY_NEEDS)
+            self._provide(node)
         if isinstance(self.scanner, builtin.ShuffleScanner) and not self.scanner.targets:
             self.scanner.targets = [address_of(node) for node in targets]
+
+    def _provide(self, node):
+        """Give a machine everything the body needs to run there.
+
+        The worm needs Python. A carried part may need more (the ransomware
+        needs its crypto libraries), and says so with TARGET_NEEDS and
+        TARGET_BUILD on its class.
+        """
+        software, build = list(BODY_NEEDS), []
+        for part in self.parts:
+            if part is None:
+                continue
+            for name in getattr(type(part), "TARGET_NEEDS", ()):
+                if name not in software:
+                    software.append(name)
+            for command in getattr(type(part), "TARGET_BUILD", ()):
+                if command not in build:
+                    build.append(command)
+        for name in software:
+            node.addSoftware(name)
+        for command in build:
+            node.addBuildCommand(command)
 
     def _fill_switch(self, emulator):
         """Tell the stop signal where its server is."""
@@ -132,11 +160,11 @@ class Worm(WormPlan, Service):
             if folder != RUNTIME_DIR and folder.name not in packages:
                 packages.append(folder.name)
                 stage_tree(node, folder, "{}/{}".format(HOME, folder.name))
-            stage = getattr(type(part), "stage", None)
+            stage = getattr(part, "stage", None)
             if stage:
-                stage(node)            # what the part needs on the launcher (here: `stack`)
+                stage(node)            # what the part needs on the launcher (tools, a probe program...)
         stage_tree(node, RUNTIME_DIR, "{}/yom_worm".format(HOME))
-        node.addSoftware(*BODY_NEEDS)
+        self._provide(node)
         node.setFile(
             "{}/worm.json".format(HOME), json.dumps(self.manifest(packages), indent=2) + "\n"
         )

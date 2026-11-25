@@ -48,7 +48,8 @@ there by breaking in, which is what makes it a worm.
 - **Where the switch is.** If the worm has a `DnsKillSwitch`, its server
   address is found and filled in.
 - **What a victim needs.** The body is Python, so `python3` is added to every
-  target.
+  target. A carried part can ask for more: the ransomware asks for its crypto
+  libraries, and they are added to every target and to the launcher.
 
 ## Running it
 
@@ -99,10 +100,15 @@ class DnsKillSwitch:                       # from Switch_Service
 | `governor` | `allowed()` → `True` or `False` | each round, before anything else |
 | `payload` | `run(worm)` | once, on the machine the body landed on |
 
-A part may also have `prepare(worm)` (called once on every machine, the `worm`
-does the networking for it), `check_host()` on an entry (problems that stop
-the launch), and a class method `stage(node)` (what it needs on the launcher
-at build time).
+A part may also have a few more things, all optional:
+
+| | What it is for |
+| --- | --- |
+| `prepare(worm)` | called once on every machine; the `worm` does the networking for the part |
+| `check_host()` | on any part, on the launcher: problems that stop the launch. It may also measure something there that then travels inside the body |
+| `stage(node)` | on the launcher at build time: the tools the part needs there |
+| `TARGET_NEEDS`, `TARGET_BUILD` (class) | software and build commands every target and the launcher need |
+| `NEEDS_LAYER` (class) | a layer that must be installed before the worm; the ransomware names its payment chain |
 
 A part lives in its own small package next to the component that provides it
 (for example `yom_morris_bof/`, `yom_switch/`). The installer ships that

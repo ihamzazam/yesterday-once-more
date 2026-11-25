@@ -6,12 +6,19 @@ import socket
 class FakeWorm:
     """Just enough of the worm's engine for a part that calls into it.
 
-    `sent` records every (ip, port, data) the part hands over.
+    `sent` records every (ip, port, data) the part hands over, and `events`
+    every line the part logs.
     """
 
-    def __init__(self):
+    def __init__(self, home=None):
         self.sent = []
+        self.events = []
+        #: The folder the body arrived in, as the real engine has it.
+        self.home = home
         self._bind_udp()
+
+    def log(self, event, **fields):
+        self.events.append((event, fields))
 
     def _bind_udp(self):
         self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
